@@ -50,7 +50,7 @@ int main()
    };
 
    rk_callback_t<HO> callback = [](double t, const TimeInfo &, const HO &s) {
-      std::cout << t << " " << s._x0 << std::endl;
+      std::cout << t << " " << s._x0  - cos(t) << std::endl;
    };
 
    rk_callback_t<HO> callback_e = [&](double t, const TimeInfo &, const HO &s) {

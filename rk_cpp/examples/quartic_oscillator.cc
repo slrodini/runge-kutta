@@ -38,7 +38,7 @@ int main()
    for (size_t i = 0; i < 100; i++) {
       time_points.push_back(i);
    }
-   TimeInfo ti(time_points, 0.1);
+   TimeInfo ti(time_points, 0.01);
 
    auto tableau = PreImplementedTableau::DOPRI8;
 
