@@ -1,0 +1,4 @@
+[
+  { "directory": "/mnt/d/Code/runge-kutta/rk_cpp/examples", "command": "/usr/bin/c++ -std=c++20 -Wall -Wextra -O3 -I../ -o harmonic_oscillator harmonic_oscillator.cc", "file": "harmonic_oscillator.cc" },
+  { "directory": "/mnt/d/Code/runge-kutta/rk_cpp/examples", "command": "/usr/bin/c++ -std=c++20 -Wall -Wextra -O3 -I../ -o quartic_oscillator quartic_oscillator.cc", "file": "quartic_oscillator.cc" }
+]

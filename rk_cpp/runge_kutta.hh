@@ -120,6 +120,7 @@ struct RungeKutta {
          _callback = callback;
       }
 
+
       void CallbackEachStep()
       {
          _cb_each_step = true;
@@ -132,6 +133,7 @@ struct RungeKutta {
 
       void step()
       {
+
          _temp_step.clone(_solution);
 
          for (int i = 0; i < Order; i++) {
@@ -159,14 +161,14 @@ struct RungeKutta {
             _dt = _time_info._dt[i];
             for (size_t j = 0; j < _time_info._n_step[i]; j++) {
                step();
-               if (_callback && _cb_each_step) {
-                  _callback->get()(_t, _time_info, _solution);
-               }
                _t += _dt;
+               if (_callback && _cb_each_step) {
+                  (*_callback)(_t, _time_info, _solution);
+               }
             }
 
-            if (_callback) {
-               _callback->get()(_t, _time_info, _solution);
+            if (_callback && !_cb_each_step) {
+               (*_callback)(_t, _time_info, _solution);
             }
 
             if (std::fabs(_t - _time_info._ts[i + 1]) > 1.0e-12) {

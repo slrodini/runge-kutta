@@ -23,18 +23,26 @@ struct HO {
          _v0 *= s;
       }
 
+      double energy() const
+      {
+         return _v0 * _v0 * 0.5 + _x0 * _x0 * 0.5;
+      }
+
       double _x0, _v0;
 };
 
 int main()
 {
    HO ho(1.0, 0.);
-   TimeInfo ti({0., 10.}, 0.5);
+   std::vector<double> time_points;
+   for (size_t i = 0; i < 100; i++) {
+      time_points.push_back(i);
+   }
+   TimeInfo ti(time_points, 0.1);
 
    auto tableau = PreImplementedTableau::DOPRI8;
-   // auto tableau = PreImplementedTableau::RKOriginal;
 
-   rk_rhs_t<HO> ho_rhs = [](double t, HO &in) -> void {
+   rk_rhs_t<HO> ho_rhs = [](double, HO &in) -> void {
       double v = in._v0;
       in._v0   = -in._x0;
       in._x0   = v;
@@ -45,10 +53,13 @@ int main()
       std::cout << t << " " << s._x0 << std::endl;
    };
 
+   rk_callback_t<HO> callback_e = [&](double t, const TimeInfo &, const HO &s) {
+      std::printf("%.4f\t%.10e\n", t, s.energy());
+   };
+
+
    auto solver = RungeKutta<HO, tableau.order>(tableau, ho, ti, ho_rhs);
-   solver.AddCallback(callback);
+   solver.AddCallback(callback_e);
 
    solver();
-
-   std::cout << solver.GetSolution()._x0 << std::endl;
 }
