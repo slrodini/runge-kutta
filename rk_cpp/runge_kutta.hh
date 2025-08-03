@@ -1,3 +1,5 @@
+#ifndef RUNGE_KUTTA_HH
+#define RUNGE_KUTTA_HH
 #include <functional>
 #include <cmath>
 
@@ -246,3 +248,4 @@ struct PreImplementedTableau {
    );
 };
 
+#endif // RUNGE_KUTTA_HH
