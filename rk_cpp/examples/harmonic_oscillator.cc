@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+using namespace rk;
+
 struct HO {
       HO(double x0, double v0) : _x0(x0), _v0(v0) {};
 
@@ -33,6 +35,35 @@ struct HO {
 
 int main()
 {
+   vd<1> x0({1.});
+   vd<1> v0({0.});
+   auto tableau = PreImplementedTableau::NEW7;
+   std::vector<double> time_points;
+   for (size_t i = 0; i < 100; i++) {
+      time_points.push_back(i);
+   }
+   TimeInfo ti(time_points, 0.05);
+
+   rkn_rhs_t<1> ho_rhs = [](double, vd<1> &v)
+   {
+      v[0] = -v[0];
+   };
+
+   rkn_callback_t<1> callback = [](double t, const TimeInfo &, const vd<1> &s, const vd<1> &v) {
+      double energy = 0.5 * (s(0) * s(0) + v(0) * v(0));
+      std::printf("%.4f\t%.10e\t%.10e\n", t, s(0) - cos(t),energy);
+
+   };
+   auto solver = RungeKuttaNystrom<tableau.order, 1>(tableau, x0, v0, ti, ho_rhs);
+   solver.AddCallback(callback);
+
+   solver();
+
+   return 0;
+}
+
+int main1()
+{
    HO ho(1.0, 0.);
    std::vector<double> time_points;
    for (size_t i = 0; i < 100; i++) {
@@ -62,4 +93,6 @@ int main()
    solver.AddCallback(callback_e);
 
    solver();
+
+   return 0;
 }

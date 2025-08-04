@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <optional>
 #include <iostream>
+#include <format>
 
 /**
  * @file runge_kutta.hh
@@ -20,7 +21,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-
+namespace rk 
+{
 /**
  * @brief Butcher Tableau for a generic Runge-Kutta method
  *
@@ -101,7 +103,7 @@ using rk_rhs_t = std::function<void(double, Solution &)>;
 template <typename Solution>
 using rk_callback_t = std::function<void(double, const TimeInfo &, const Solution &)>;
 
-template <typename Solution, int Order>
+template <typename Solution, size_t Order>
 requires RungeKuttaCompatible<Solution>
 struct RungeKutta {
    public:
@@ -136,11 +138,11 @@ struct RungeKutta {
 
          _temp_step.clone(_solution);
 
-         for (int i = 0; i < Order; i++) {
+         for (size_t i = 0; i < Order; i++) {
 
             _ki[i].clone(_solution);
 
-            for (int j = 0; j < i; j++) {
+            for (size_t j = 0; j < i; j++) {
                if (_tableau._ai[i][j] == 0.) continue;
                _ki[i].add_with_weight(_tableau._ai[i][j], _ki[j]);
             }
@@ -200,16 +202,241 @@ struct RungeKutta {
       std::optional<std::reference_wrapper<rk_callback_t<Solution>>> _callback;
 };
 
+template <size_t N>
+class vd
+{
+
+   public:
+      vd()
+      {
+         _data.fill(0.);
+      }
+      vd(const std::array<double, N> &in)
+      {
+         for (size_t i = 0; i < N; i++) {
+            _data[i] = in[i];
+         }
+      }
+
+      double &operator[](size_t i)
+      {
+         if (i < N) return _data[i];
+         else throw std::out_of_range(std::format("vs[{:d}], index out of range [0,{:d})", i, N));
+      }
+      const double &operator()(size_t i) const
+      {
+         if (i < N) return _data[i];
+         else throw std::out_of_range(std::format("vs[{:d}], index out of range [0,{:d})", i, N));
+      }
+
+      inline size_t size() const
+      {
+         return N;
+      }
+
+      void clone(const vd<N> &other)
+      {
+         for (size_t i = 0; i < N; i++) {
+            _data[i] = other(i);
+         }
+      }
+
+      void add_with_weight(double w, const vd<N> &other)
+      {
+         for (size_t i = 0; i < N; i++) {
+            _data[i] += w * other(i);
+         }
+      }
+
+      void scalar_mult(double s)
+      {
+         for (size_t i = 0; i < N; i++) {
+            _data[i] *= s;
+         }
+      }
+
+   private:
+      std::array<double, N> _data;
+};
+
+template <size_t Order>
+struct ButcherNystromTableau : public ButcherTableau<Order> {
+
+      /// Delete default constructor to avoid non-sense
+      ButcherNystromTableau() = delete;
+
+      ButcherNystromTableau(std::array<double, Order> const &ci,
+                            std::array<double, Order> const &bi,
+                            std::array<double, Order> const &bbari,
+                            std::array<std::vector<double>, Order> const &ai)
+          : ButcherTableau<Order>(ci, bi, ai), _bbari(bbari) {};
+
+      const std::array<double, Order> _bbari;
+};
+
+
+template <size_t N>
+using rkn_rhs_t = std::function<void(double, vd<N> &)>;
+
+template <size_t N>
+using rkn_callback_t = std::function<void(double, const TimeInfo &, const vd<N> &, const vd<N> &)>;
+
+template <size_t Order, size_t N>
+struct RungeKuttaNystrom {
+   public:
+      RungeKuttaNystrom(const ButcherNystromTableau<Order> &tableau,
+                        const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs)
+          : _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+            _solution_der(initial_conditions_der), _temp_step(initial_conditions),
+            _temp_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
+      {
+         for (size_t i = 0; i < Order; i++) {
+            _ki.push_back(initial_conditions);
+         }
+      }
+
+      void AddCallback(rkn_callback_t<N> &callback)
+      {
+         _callback = callback;
+      }
+
+      void CallbackEachStep()
+      {
+         _cb_each_step = true;
+      }
+
+      void CallbackOnlyOnTimeStamp()
+      {
+         _cb_each_step = false;
+      }
+
+      void step()
+      {
+
+         _temp_step.clone(_solution);
+         _temp_step_der.clone(_solution_der);
+         _temp_step.add_with_weight(_dt, _solution_der);
+
+         for (size_t i = 0; i < Order; i++) {
+
+            _ki[i].clone(_solution);
+            _ki[i].add_with_weight(_tableau._ci[i] * _dt, _solution_der);
+
+            for (size_t j = 0; j < i; j++) {
+               if (_tableau._ai[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._ai[i][j] * _dt, _ki[j]);
+            }
+
+            _rhs(_t + _tableau._ci[i] * _dt, _ki[i]);
+            _ki[i].scalar_mult(_dt);
+
+            _temp_step_der.add_with_weight(_tableau._bi[i], _ki[i]);
+            _temp_step.add_with_weight(_tableau._bbari[i] * _dt, _ki[i]);
+         }
+
+         _solution.clone(_temp_step);
+         _solution_der.clone(_temp_step_der);
+      }
+
+      void operator()()
+      {
+         for (size_t i = 0; i < _time_info._ts.size() - 1; i++) {
+            _t  = _time_info._ts[i];
+            _dt = _time_info._dt[i];
+            for (size_t j = 0; j < _time_info._n_step[i]; j++) {
+               step();
+               _t += _dt;
+               if (_callback && _cb_each_step) {
+                  (*_callback)(_t, _time_info, _solution, _solution_der);
+               }
+            }
+
+            if (_callback && !_cb_each_step) {
+               (*_callback)(_t, _time_info, _solution, _solution_der);
+            }
+
+            if (std::fabs(_t - _time_info._ts[i + 1]) > 1.0e-12) {
+               std::cerr << std::fabs(_t - _time_info._ts[i + 1]) << std::endl;
+               throw std::runtime_error("RungeKutta: time steps do not match. This is a bug.");
+            }
+         }
+      }
+
+      std::pair<const vd<N> &, const vd<N> &> GetSolution()
+      {
+         return {_solution, _solution_der};
+      }
+
+   private:
+      double _t, _dt;
+
+      bool _cb_each_step;
+      ButcherNystromTableau<Order> _tableau;
+      vd<N> _solution, _solution_der;
+      vd<N> _temp_step, _temp_step_der;
+      std::vector<vd<N>> _ki;
+
+      TimeInfo _time_info;
+
+      /// The right hand side of ODE
+      std::reference_wrapper<rkn_rhs_t<N>> _rhs;
+      /// The (optional) callback
+      std::optional<std::reference_wrapper<rkn_callback_t<N>>> _callback;
+};
+
 struct PreImplementedTableau {
    static inline const ButcherTableau<4> RKOriginal = 
    ButcherTableau<4>(
-      {0,         0.5,       0.5,       1}, 
-      {1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0},
-      {{
+      {0,         0.5,       0.5,       1},         /* ci  */
+      {1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0}, /* bi  */
+      {{                                            /* aij */
          { }, 
          {0.5}, 
          {0, 0.5}, 
          {0, 0, 1}
+      }}
+   );
+
+   static inline const ButcherNystromTableau<3> RKNv1 = 
+   ButcherNystromTableau<3>(
+      {(3. + sqrt(3.)) / 6.,  (3. - sqrt(3.)) / 6., (3. + sqrt(3.)) / 6.},        /* ci    */
+      {(3. - 2. * sqrt(3.)) / 12., 0.5, (3. + 2. * sqrt(3.)) / 12.},              /* bi    */
+      {(5. - 3. * sqrt(3.)) / 24., (3. + sqrt(3.)) / 12., (1. + sqrt(3.)) / 24.}, /* bbari */
+      {{                                                                          /* aij   */
+         { }, 
+         {(2. - sqrt(3.)) / 12.}, 
+         {0., sqrt(3.) / 6.}
+      }}
+   );
+
+
+   static inline const ButcherNystromTableau<3> RKNv2 = 
+   ButcherNystromTableau<3>(
+      {(3. - sqrt(3.)) / 6.,  (3. + sqrt(3.)) / 6., (3. - sqrt(3.)) / 6.},        /* ci    */
+      {(3. + 2. * sqrt(3.)) / 12., 0.5, (3. - 2. * sqrt(3.)) / 12.},              /* bi    */
+      {(5. + 3. * sqrt(3.)) / 24., (3. - sqrt(3.)) / 12., (1. - sqrt(3.)) / 24.}, /* bbari */
+      {{                                                                          /* aij   */
+         { }, 
+         {(2. + sqrt(3.)) / 12.}, 
+         {0., -sqrt(3.) / 6.}
+      }}
+   );
+
+   /// From Table 1 of doi.org/10.1016/j.cam.2021.113753
+   static inline const ButcherNystromTableau<7> NEW7 = 
+   ButcherNystromTableau<7>(
+      {0., 108816483. / 943181462, 108816483. / 471590731., 151401202. / 200292705., 682035803. / 631524599., 493263404. / 781610081., 1.},                        /* ci    */
+      {53103334. / 780726093., 0., 244481296. / 685635505., 41493456. / 602487871., -45498718. / 926142189., 1625563237. / 4379140271., 191595797. / 1038702495.}, /* bi    */
+      {53103334. / 780726093., 0., 352190060. / 1283966121., 37088117. / 2206150964., 7183323. / 1828127386., 187705681. / 1370684829., 0.},                       /* bbari */
+      {{   /* aij   */
+         { }, 
+         {5107771. / 767472028.}, 
+         {5107771. / 575604021., 16661485. / 938806552.},
+         {325996677. / 876867260., -397622579. / 499461366., 541212017. / 762248206.},
+         {82243160. / 364375691., -515873404. / 1213273815., 820109726. / 1294837243., 36245507. / 242779260.},
+         {3579594. / 351273191., 34292133. / 461028419., 267156948. / 2671391749., 22665163. / 1338599875., -3836509. / 1614789462.},
+         {53103334. / 780726093., 0., 352190060. / 1283966121., 37088117. / 2206150964., 7183323. / 1828127386., 187705681. / 1370684829.},
       }}
    );
 
@@ -250,4 +477,5 @@ struct PreImplementedTableau {
    );
 };
 
+} // namespace rk
 #endif // RUNGE_KUTTA_HH
