@@ -7,7 +7,7 @@
 #include <stdbool.h>
 
 typedef struct {
-      size_t order;
+      size_t stages;
       double *_ci, *_bi;
       double **_aij;
 } ButcherTableau;
@@ -70,7 +70,7 @@ void rk_evolve(RungeKuttaContext *context);
 #include <math.h>
 
 static const ButcherTableau RKOriginal = {
-    .order = 4,
+    .stages = 4,
     ._ci   = (double[4]){0., 0.5, 0.5, 1.0},
     ._bi   = (double[4]){1. / 6., 1. / 3., 1. / 3., 1. / 6.},
     ._aij =
@@ -83,7 +83,7 @@ static const ButcherTableau RKOriginal = {
 };
 
 static const ButcherTableau DOPRI5 = {
-    .order = 7,
+    .stages = 7,
     ._ci   = (double[7]){0., 1. / 5, 3. / 10, 4. / 5, 8. / 9, 1., 1.},
     ._bi   = (double[7]){35. / 384, 0., 500. / 1113, 125. / 192, -2187. / 6784, 11. / 84, 0.},
     ._aij =
@@ -99,7 +99,7 @@ static const ButcherTableau DOPRI5 = {
 };
 
 static const ButcherTableau DOPRI8 = {
-    .order = 13,
+    .stages = 13,
     ._ci   = (double[13]){0., 1. / 18, 1. / 12, 1. / 8, 5. / 16, 3. / 8, 59. / 400, 93. / 200, 5490023248. / 9719169821, 13. / 20, 1201146811. / 1299019798, 1., 1.},
     ._bi   = (double[13]){14005451. / 335480064, 0., 0., 0., 0., -59238493. / 1068277825, 181606767. / 758867731, 561292985. / 797845732, -1041891430. / 1371343529, 760417239. / 1151165299, 118820643. / 751138087, -528747749. / 2220607170, 1. / 4},
     ._aij =
@@ -122,28 +122,28 @@ static const ButcherTableau DOPRI8 = {
 
 void rk_print_tableau(const ButcherTableau *t)
 {
-   printf("Order: %zu\n", t->order);
+   printf("Stages: %zu\n", t->stages);
 
    printf("C[i] = ");
-   for (size_t i = 0; i < t->order; i++) {
+   for (size_t i = 0; i < t->stages; i++) {
       printf("%.16f", t->_ci[i]);
-      if (i != t->order - 1) {
+      if (i != t->stages - 1) {
          printf(", ");
       }
    }
    printf("\n");
 
    printf("B[i] = ");
-   for (size_t i = 0; i < t->order; i++) {
+   for (size_t i = 0; i < t->stages; i++) {
       printf("%.16f", t->_bi[i]);
-      if (i != t->order - 1) {
+      if (i != t->stages - 1) {
          printf(", ");
       }
    }
    printf("\n");
 
    printf("A[i][j] = ");
-   for (size_t i = 0; i < t->order; i++) {
+   for (size_t i = 0; i < t->stages; i++) {
       for (size_t j = 0; j < i; j++) {
          printf("%.16f", t->_aij[i][j]);
          if (j != i - 1) {
@@ -157,8 +157,8 @@ void rk_print_tableau(const ButcherTableau *t)
 
 void rk_copy_tableau(ButcherTableau *dest, const ButcherTableau *src)
 {
-   size_t n    = src->order;
-   dest->order = n;
+   size_t n    = src->stages;
+   dest->stages = n;
    dest->_bi   = (double *)calloc(n, sizeof(double));
    dest->_ci   = (double *)calloc(n, sizeof(double));
    dest->_aij  = (double **)calloc(n, sizeof(double *));
@@ -176,7 +176,7 @@ void rk_free_tableau(ButcherTableau *t)
 {
    free(t->_bi);
    free(t->_ci);
-   for (size_t i = 0; i < t->order; i++) {
+   for (size_t i = 0; i < t->stages; i++) {
       free(t->_aij[i]);
    }
    free(t->_aij);
@@ -242,7 +242,7 @@ void rk_free_runge_kutta_context(RungeKuttaContext **c_d)
    RungeKuttaContext *c = *c_d;
    rk_free_solution(&c->solution);
    rk_free_solution(&c->_temp_step);
-   for (size_t i = 0; i < c->tableau.order; i++) {
+   for (size_t i = 0; i < c->tableau.stages; i++) {
       rk_free_solution(&(c->_ki[i]));
    }
    free(c->_ki);
@@ -277,8 +277,8 @@ RungeKuttaContext *rk_init_context_from_tab(const ButcherTableau *tab, Solution 
 
 
 
-   context->_ki = (Solution *)calloc(tab->order, sizeof(Solution));
-   for (size_t i = 0; i < tab->order; i++) {
+   context->_ki = (Solution *)calloc(tab->stages, sizeof(Solution));
+   for (size_t i = 0; i < tab->stages; i++) {
       rk_copy_solution(&(context->_ki[i]), initial_condition);
    }
 
@@ -323,7 +323,7 @@ void rk_step(RungeKuttaContext *context)
    // context->_temp_step.clone(context->_temp_step.data, context->solution.data);
    CLONE(_temp_step, solution);
 
-   for (size_t i = 0; i < context->tableau.order; i++) {
+   for (size_t i = 0; i < context->tableau.stages; i++) {
       CLONE(_ki[i], solution);
       for (size_t j = 0; j < i; j++) {
          double w = context->tableau._aij[i][j];
