@@ -14,9 +14,9 @@
 /**
  * @file runge_kutta.hh
  * @author Simone Rodini (rodini.simone.luigi@gmail.com)
- * @brief  Default includes across Honeycomb
+ * @brief  Standalone Runge Kutta implementation
  * @version 0.1
- * @date 2025-08-02
+ * @date 2025-09-02
  *
  * @copyright Copyright (c) 2025
  *
@@ -247,7 +247,7 @@ requires RungeKuttaCompatible<Solution>
 struct AdaptiveRungeKutta {
    public:
       AdaptiveRungeKutta(const ButcherTableauWErrorEstimate<Stages> &tableau, const Solution &initial_conditions,
-                 TimeInfo time_info, rk_rhs_t<Solution> &rhs, double toll)
+                 TimeInfo time_info, rk_rhs_t<Solution> &rhs, double tol)
           : _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
             _temp_step(initial_conditions), _err_step(initial_conditions),
             _time_info(time_info), _rhs(rhs)
@@ -255,10 +255,10 @@ struct AdaptiveRungeKutta {
          for (size_t i = 0; i < Stages; i++) {
             _ki.push_back(initial_conditions);
          }
-         if(toll < 1.0e-15){
-            throw std::invalid_argument("AdaptiveRungeKutta: tollerance too small");
+         if(tol < 1.0e-15){
+            throw std::invalid_argument("AdaptiveRungeKutta: tolerance too small");
          }
-         _tollerance = toll;
+         _tolerance = tol;
          _err_est = 0.;
          _t = 0.;
          _dt = 0.;
@@ -307,14 +307,14 @@ struct AdaptiveRungeKutta {
             _dt = _time_info._dt[i];
             while(_t - _time_info._ts[i + 1] < -1.0e-12) {
                try_step();
-               double _dt_new = 0.9 * _dt * pow(_tollerance / _err_est, 1. / _tableau._order);
+               double _dt_new = 0.9 * _dt * pow(_tolerance / _err_est, 1. / _tableau._order);
 
                // Failed step, try again with new _dt;
-               if (_err_est > _tollerance) {
+               if (_err_est > _tolerance) {
                   if (_dt_new < 1.0e-15 || _dt_new < 1.0e-6 * _time_info._dt[i]) {
                      std::fprintf(stderr, "%.10e\n", _dt_new);
                      throw std::runtime_error(
-                         "Time step became too small, tollerance cannot be reached.");
+                         "Time step became too small, tolerance cannot be reached.");
                   }
                   _dt = _dt_new;
                   continue;
@@ -348,7 +348,7 @@ struct AdaptiveRungeKutta {
 
    private:
       double _t, _dt;
-      double _err_est, _tollerance;
+      double _err_est, _tolerance;
 
       bool _cb_each_step;
       ButcherTableauWErrorEstimate<Stages> _tableau;
@@ -514,8 +514,8 @@ struct RungeKuttaNystrom {
    public:
       RungeKuttaNystrom(const ButcherNystromTableau<Stages> &tableau,
                         const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
-                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
-          : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double tol = 1.0e-12)
+          : _tolerance(tol), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
             _solution_der(initial_conditions_der), _temp_step(initial_conditions),
             _temp_step_der(initial_conditions_der), _err_step(initial_conditions),
             _err_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
@@ -526,8 +526,8 @@ struct RungeKuttaNystrom {
       }
       RungeKuttaNystrom(const ButcherNystromTableauWErrorEstimate<Stages> &tableau,
                         const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
-                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
-          : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double tol = 1.0e-12)
+          : _tolerance(tol), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
             _solution_der(initial_conditions_der), _temp_step(initial_conditions),
             _temp_step_der(initial_conditions_der), _err_step(initial_conditions),
             _err_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
@@ -618,7 +618,7 @@ struct RungeKuttaNystrom {
       }
 
    private:
-      double _tollerance;
+      double _tolerance;
       double _t, _dt;
       double _err_est;
 
@@ -658,8 +658,8 @@ struct AdaptiveRungeKuttaNystrom {
    public:
       AdaptiveRungeKuttaNystrom(const ButcherNystromTableauWErrorEstimate<Stages> &tableau,
                         const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
-                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
-          : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double tol = 1.0e-12)
+          : _tolerance(tol), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
             _solution_der(initial_conditions_der), _temp_step(initial_conditions),
             _temp_step_der(initial_conditions_der), _err_step(initial_conditions),
             _err_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
@@ -730,14 +730,14 @@ struct AdaptiveRungeKuttaNystrom {
 
             while(_t - _time_info._ts[i + 1] < -1.0e-12) {
                try_step();
-               double _dt_new = 0.9 * _dt * pow(_tollerance / _err_est, 1. / _tableau._order);
+               double _dt_new = 0.9 * _dt * pow(_tolerance / _err_est, 1. / _tableau._order);
 
                // Failed step, try again with new _dt;
-               if (_err_est > _tollerance) {
+               if (_err_est > _tolerance) {
                   if (_dt_new < 1.0e-15 || _dt_new < 1.0e-6 * _time_info._dt[i]) {
                      std::fprintf(stderr, "%.10e\n", _dt_new);
                      throw std::runtime_error(
-                         "Time step became too small, tollerance cannot be reached.");
+                         "Time step became too small, tolerance cannot be reached.");
                   }
                   _dt = _dt_new;
                   continue;
@@ -773,7 +773,7 @@ struct AdaptiveRungeKuttaNystrom {
       }
 
    private:
-      double _tollerance;
+      double _tolerance;
       double _t, _dt;
       double _err_est;
 
