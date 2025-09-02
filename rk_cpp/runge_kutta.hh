@@ -35,10 +35,10 @@ struct ButcherTableau {
       ButcherTableau() = delete;
 
       ButcherTableau(double order,
-                     std::array<double, Stages> const &ci, 
-                     std::array<double, Stages> const &bi,
-                     std::array<std::vector<double>, Stages> const &ai)
-          : _order(order), _ai(ai), _bi(bi), _ci(ci)
+                     const std::array<double, Stages>  &ci, 
+                     const std::array<double, Stages>  &bi,
+                     const std::array<std::vector<double>, Stages>  &ai)
+          : _order(order), _aij(ai), _bi(bi), _ci(ci)
       {
          double s = 0.;
          /// Sanity checks
@@ -56,7 +56,7 @@ struct ButcherTableau {
 
       static constexpr size_t stages = Stages;
       const double _order;
-      const std::array<std::vector<double>, Stages> _ai;
+      const std::array<std::vector<double>, Stages> _aij;
       const std::array<double, Stages> _bi;
       const std::array<double, Stages> _ci;
 };
@@ -68,10 +68,10 @@ struct ButcherTableauWErrorEstimate : public ButcherTableau<Stages> {
       ButcherTableauWErrorEstimate() = delete;
 
       ButcherTableauWErrorEstimate(double hi, double lo,
-                                   std::array<double, Stages> const &ci,
-                                   std::array<double, Stages> const &bi,
-                                   std::array<double, Stages> const &bi_lo,
-                                   std::array<std::vector<double>, Stages> const &ai)
+                                   const std::array<double, Stages>  &ci,
+                                   const std::array<double, Stages>  &bi,
+                                   const std::array<double, Stages>  &bi_lo,
+                                   const std::array<std::vector<double>, Stages>  &ai)
           : ButcherTableau<Stages>(hi, ci, bi, ai), _order_lo(lo), _bi_lo(bi_lo)
       {
          // Note: depending on the method, not all bi_lo will sum to 1.
@@ -171,8 +171,8 @@ struct RungeKutta {
             _ki[i].clone(_solution);
 
             for (size_t j = 0; j < i; j++) {
-               if (_tableau._ai[i][j] == 0.) continue;
-               _ki[i].add_with_weight(_tableau._ai[i][j], _ki[j]);
+               if (_tableau._aij[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._aij[i][j], _ki[j]);
             }
 
             _rhs(_t + _dt * _tableau._ci[i], _ki[i]);
@@ -289,8 +289,8 @@ struct AdaptiveRungeKutta {
          for (size_t i = 0; i < Stages; i++) {
             _ki[i].clone(_solution);
             for (size_t j = 0; j < i; j++) {
-               if (_tableau._ai[i][j] == 0.) continue;
-               _ki[i].add_with_weight(_tableau._ai[i][j], _ki[j]);
+               if (_tableau._aij[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._aij[i][j], _ki[j]);
             }
             _rhs(_t + _dt * _tableau._ci[i], _ki[i]);
             _ki[i].scalar_mult(_dt);
@@ -442,21 +442,6 @@ class vd
       std::array<double, N> _data;
 };
 
-template <size_t Stages>
-struct ButcherNystromTableau : public ButcherTableau<Stages> {
-
-      /// Delete default constructor to avoid non-sense
-      ButcherNystromTableau() = delete;
-
-      ButcherNystromTableau(double hi, 
-                            std::array<double, Stages> const &ci,
-                            std::array<double, Stages> const &bi,
-                            std::array<double, Stages> const &bbari,
-                            std::array<std::vector<double>, Stages> const &ai)
-          : ButcherTableau<Stages>(hi, ci, bi, ai), _bbari(bbari) {};
-
-      const std::array<double, Stages> _bbari;
-};
 
 template <size_t Stages>
 struct ButcherNystromTableauWErrorEstimate : public ButcherTableauWErrorEstimate<Stages> {
@@ -465,18 +450,41 @@ struct ButcherNystromTableauWErrorEstimate : public ButcherTableauWErrorEstimate
       ButcherNystromTableauWErrorEstimate() = delete;
 
       ButcherNystromTableauWErrorEstimate(double hi, double lo,
-                            std::array<double, Stages> const &ci,
-                            std::array<double, Stages> const &bi,
-                            std::array<double, Stages> const &bi_lo,
-                            std::array<double, Stages> const &bbari,
-                            std::array<double, Stages> const &bbari_lo,
-                            std::array<std::vector<double>, Stages> const &ai)
+                            const std::array<double, Stages>  &ci,
+                            const std::array<double, Stages>  &bi,
+                            const std::array<double, Stages>  &bi_lo,
+                            const std::array<double, Stages>  &bbari,
+                            const std::array<double, Stages>  &bbari_lo,
+                            const std::array<std::vector<double>, Stages>  &ai)
           : ButcherTableauWErrorEstimate<Stages>(hi, lo, ci, bi, bi_lo, ai), _bbari(bbari),
             _bbari_lo(bbari_lo) {};
 
       const std::array<double, Stages> _bbari;
       const std::array<double, Stages> _bbari_lo;
 };
+
+
+template <size_t Stages>
+struct ButcherNystromTableau : public ButcherTableau<Stages> {
+
+      /// Delete default constructor to avoid non-sense
+      ButcherNystromTableau() = delete;
+
+      ButcherNystromTableau(double hi, 
+                            const std::array<double, Stages>  &ci,
+                            const std::array<double, Stages>  &bi,
+                            const std::array<double, Stages>  &bbari,
+                            const std::array<std::vector<double>, Stages>  &ai)
+          : ButcherTableau<Stages>(hi, ci, bi, ai), _bbari(bbari) {};
+
+
+      ButcherNystromTableau(const ButcherNystromTableauWErrorEstimate<Stages> &in_tab)
+         : ButcherNystromTableau(in_tab._order, in_tab._ci, in_tab._bi, in_tab._bbari, in_tab._aij)
+      {};   
+
+      const std::array<double, Stages> _bbari;
+};
+
 
 template <size_t N>
 using rkn_rhs_t = std::function<void(double, vd<N> &)>;
@@ -505,6 +513,18 @@ template <size_t Stages, size_t N>
 struct RungeKuttaNystrom {
    public:
       RungeKuttaNystrom(const ButcherNystromTableau<Stages> &tableau,
+                        const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
+          : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+            _solution_der(initial_conditions_der), _temp_step(initial_conditions),
+            _temp_step_der(initial_conditions_der), _err_step(initial_conditions),
+            _err_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
+      {
+         for (size_t i = 0; i < Stages; i++) {
+            _ki.push_back(initial_conditions);
+         }
+      }
+      RungeKuttaNystrom(const ButcherNystromTableauWErrorEstimate<Stages> &tableau,
                         const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
                         TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
           : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
@@ -547,8 +567,8 @@ struct RungeKuttaNystrom {
             _ki[i].add_with_weight(_tableau._ci[i] * _dt, _solution_der);
 
             for (size_t j = 0; j < i; j++) {
-               if (_tableau._ai[i][j] == 0.) continue;
-               _ki[i].add_with_weight(_tableau._ai[i][j] * _dt, _ki[j]);
+               if (_tableau._aij[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._aij[i][j] * _dt, _ki[j]);
             }
 
             _rhs(_t + _tableau._ci[i] * _dt, _ki[i]);
@@ -677,8 +697,8 @@ struct AdaptiveRungeKuttaNystrom {
             _ki[i].add_with_weight(_tableau._ci[i] * _dt, _solution_der);
 
             for (size_t j = 0; j < i; j++) {
-               if (_tableau._ai[i][j] == 0.) continue;
-               _ki[i].add_with_weight(_tableau._ai[i][j] * _dt, _ki[j]);
+               if (_tableau._aij[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._aij[i][j] * _dt, _ki[j]);
             }
 
             _rhs(_t + _tableau._ci[i] * _dt, _ki[i]);
