@@ -50,7 +50,8 @@ int main2()
    vd<1> x0({1.});
    vd<1> v0({0.});
    // auto tableau = PreImplementedTableau::OS76;
-   auto tableau = PreImplementedTableau::NEW7;
+   auto tableau = PreImplementedTableau::BM_SRKN11;
+   // auto tableau = PreImplementedTableau::NEW7;
 
    std::vector<double> time_points;
    for (size_t i = 0; i < 100; i++) {
