@@ -56,7 +56,7 @@ int main2()
       std::printf("%.4f\t%.10e\t%.10e\n", t, s(0),  energy);
 
    };
-   auto solver = RungeKuttaNystrom<tableau.stages, 1>(tableau, x0, v0, ti, ho_rhs);
+   auto solver = AdaptiveRungeKuttaNystrom<tableau.stages, 1>(tableau, x0, v0, ti, ho_rhs);
    solver.AddCallback(callback);
 
    solver();

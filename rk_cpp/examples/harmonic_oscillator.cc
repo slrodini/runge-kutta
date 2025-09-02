@@ -49,7 +49,7 @@ int main2()
 {
    vd<1> x0({1.});
    vd<1> v0({0.});
-   auto tableau = PreImplementedTableau::NEW7;
+   auto tableau = PreImplementedTableau::OS76;
    std::vector<double> time_points;
    for (size_t i = 0; i < 100; i++) {
       time_points.push_back(i);
@@ -150,5 +150,5 @@ int main3()
 
 int main()
 {
-   return main3();
+   return main2();
 }

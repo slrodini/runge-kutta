@@ -184,14 +184,20 @@ struct RungeKutta {
          _solution.clone(_temp_step);
       }
 
+      /// @name For visualization applications
+      /// @{
+      void advance_t() { _t += _dt; }
+      void set_dt(double dt) { _dt = dt; }
+      /// @}
+
       void operator()()
       {
          for (size_t i = 0; i < _time_info._ts.size() - 1; i++) {
             _t  = _time_info._ts[i];
-            _dt = _time_info._dt[i];
+            set_dt(_time_info._dt[i]);
             for (size_t j = 0; j < _time_info._n_step[i]; j++) {
                step();
-               _t += _dt;
+               advance_t();
                if (_callback && _cb_each_step) {
                   (*_callback)(_t, _time_info, _solution);
                }
@@ -437,12 +443,28 @@ class vd
 };
 
 template <size_t Stages>
-struct ButcherNystromTableau : public ButcherTableauWErrorEstimate<Stages> {
+struct ButcherNystromTableau : public ButcherTableau<Stages> {
 
       /// Delete default constructor to avoid non-sense
       ButcherNystromTableau() = delete;
 
-      ButcherNystromTableau(double hi, double lo,
+      ButcherNystromTableau(double hi, 
+                            std::array<double, Stages> const &ci,
+                            std::array<double, Stages> const &bi,
+                            std::array<double, Stages> const &bbari,
+                            std::array<std::vector<double>, Stages> const &ai)
+          : ButcherTableau<Stages>(hi, ci, bi, ai), _bbari(bbari) {};
+
+      const std::array<double, Stages> _bbari;
+};
+
+template <size_t Stages>
+struct ButcherNystromTableauWErrorEstimate : public ButcherTableauWErrorEstimate<Stages> {
+
+      /// Delete default constructor to avoid non-sense
+      ButcherNystromTableauWErrorEstimate() = delete;
+
+      ButcherNystromTableauWErrorEstimate(double hi, double lo,
                             std::array<double, Stages> const &ci,
                             std::array<double, Stages> const &bi,
                             std::array<double, Stages> const &bi_lo,
@@ -510,6 +532,138 @@ struct RungeKuttaNystrom {
          _cb_each_step = false;
       }
 
+
+      /// Note: no error estimation
+      void step()
+      {
+
+         _temp_step.clone(_solution);
+         _temp_step_der.clone(_solution_der);
+         _temp_step.add_with_weight(_dt, _solution_der);
+
+         for (size_t i = 0; i < Stages; i++) {
+
+            _ki[i].clone(_solution);
+            _ki[i].add_with_weight(_tableau._ci[i] * _dt, _solution_der);
+
+            for (size_t j = 0; j < i; j++) {
+               if (_tableau._ai[i][j] == 0.) continue;
+               _ki[i].add_with_weight(_tableau._ai[i][j] * _dt, _ki[j]);
+            }
+
+            _rhs(_t + _tableau._ci[i] * _dt, _ki[i]);
+            _ki[i].scalar_mult(_dt);
+
+            _temp_step_der.add_with_weight(_tableau._bi[i], _ki[i]);
+            _temp_step.add_with_weight(_tableau._bbari[i] * _dt, _ki[i]);
+         }
+
+         _solution.clone(_temp_step);
+         _solution_der.clone(_temp_step_der);
+      }
+
+      /// @name For visualization applications
+      /// @{
+      void advance_t() { _t += _dt; }
+      void set_dt(double dt) { _dt = dt; }
+      /// @}
+
+      void operator()()
+      {
+         for (size_t i = 0; i < _time_info._ts.size() - 1; i++) {
+            _t  = _time_info._ts[i];
+            set_dt(_time_info._dt[i]);
+            for (size_t j = 0; j < _time_info._n_step[i]; j++) {
+               step();
+               advance_t();
+               if (_callback && _cb_each_step) {
+                  (*_callback)(_t, _time_info, _solution, _solution_der);
+               }
+            }
+
+            if (_callback && !_cb_each_step) {
+               (*_callback)(_t, _time_info, _solution, _solution_der);
+            }
+
+            if (std::fabs(_t - _time_info._ts[i + 1]) > 1.0e-12) {
+               std::cerr << std::fabs(_t - _time_info._ts[i + 1]) << std::endl;
+               throw std::runtime_error("RungeKutta: time steps do not match. This is a bug.");
+            }
+         }
+      }
+
+      std::pair<const vd<N> &, const vd<N> &> GetSolution()
+      {
+         return {_solution, _solution_der};
+      }
+
+   private:
+      double _tollerance;
+      double _t, _dt;
+      double _err_est;
+
+      bool _cb_each_step;
+      ButcherNystromTableau<Stages> _tableau;
+      vd<N> _solution, _solution_der;
+      vd<N> _temp_step, _temp_step_der;
+      vd<N> _err_step, _err_step_der;
+      std::vector<vd<N>> _ki;
+
+      TimeInfo _time_info;
+
+      /// The right hand side of ODE
+      std::reference_wrapper<rkn_rhs_t<N>> _rhs;
+      /// The (optional) callback
+      std::optional<std::reference_wrapper<rkn_callback_t<N>>> _callback;
+};
+
+/**
+ * @brief Class for solving Runge-Kutta-Nystrom ODE
+ * 
+ * @tparam Stages The order of the method to be used
+ * @tparam N     The size of the vector of solution
+ *
+ * @note Only vector-like solutions are accepted, and they must be packaged 
+ * into a vd<N> class.
+ *
+ * This class solves ODEs of the form \f$  f''(t) = RHS(t, f(t)) \f$, 
+ * i.e. the right-hand side cannot depend on the first derivatives of f.
+ * Problem of this form are the typical problems in Lagrangian Mechanic with
+ * velocity-independent potentials. If the rhs of the ODE depends over 
+ * the first derivative, use RungeKutta class. 
+ * More details here: https://doi.org/10.1016/j.cam.2021.113753
+ */
+template <size_t Stages, size_t N>
+struct AdaptiveRungeKuttaNystrom {
+   public:
+      AdaptiveRungeKuttaNystrom(const ButcherNystromTableauWErrorEstimate<Stages> &tableau,
+                        const vd<N> &initial_conditions, const vd<N> &initial_conditions_der,
+                        TimeInfo time_info, rkn_rhs_t<N> &rhs, double toll = 1.0e-12)
+          : _tollerance(toll), _cb_each_step(false), _tableau(tableau), _solution(initial_conditions),
+            _solution_der(initial_conditions_der), _temp_step(initial_conditions),
+            _temp_step_der(initial_conditions_der), _err_step(initial_conditions),
+            _err_step_der(initial_conditions_der), _time_info(time_info), _rhs(rhs)
+      {
+         for (size_t i = 0; i < Stages; i++) {
+            _ki.push_back(initial_conditions);
+         }
+      }
+
+      void AddCallback(rkn_callback_t<N> &callback)
+      {
+         _callback = callback;
+      }
+
+      void CallbackEachStep()
+      {
+         _cb_each_step = true;
+      }
+
+      void CallbackOnlyOnTimeStamp()
+      {
+         _cb_each_step = false;
+      }
+
       void try_step()
       {
 
@@ -546,6 +700,7 @@ struct RungeKuttaNystrom {
          _err_est = sqrt(_err_step.norm2() + _err_step_der.norm2());
          
       }
+
 
       void operator()()
       {
@@ -603,7 +758,7 @@ struct RungeKuttaNystrom {
       double _err_est;
 
       bool _cb_each_step;
-      ButcherNystromTableau<Stages> _tableau;
+      ButcherNystromTableauWErrorEstimate<Stages> _tableau;
       vd<N> _solution, _solution_der;
       vd<N> _temp_step, _temp_step_der;
       vd<N> _err_step, _err_step_der;
@@ -621,7 +776,7 @@ struct PreImplementedTableau {
    static inline const ButcherTableau<4> RKOriginal = 
    ButcherTableau<4>(4,
       {0,         0.5,       0.5,       1},         /* ci  */
-      {1. / 6., 1. / 3., 1. / 3., 1. / 6.}, /* bi  */
+      {1. / 6., 1. / 3., 1. / 3., 1. / 6.},         /* bi  */
       {{                                            /* aij */
          { }, 
          {0.5}, 
@@ -656,8 +811,8 @@ struct PreImplementedTableau {
    // );
 
    /// From Table 1 of doi.org/10.1016/j.cam.2021.113753
-   static inline const ButcherNystromTableau<7> NEW7 = 
-   ButcherNystromTableau<7>(7, 5,/* Order of the lowest step, for error esitmation */
+   static inline const ButcherNystromTableauWErrorEstimate<7> NEW7 = 
+   ButcherNystromTableauWErrorEstimate<7>(7, 5,/* Order of the lowest step, for error esitmation */
       {0., 108816483. / 943181462, 108816483. / 471590731., 151401202. / 200292705., 682035803. / 631524599., 493263404. / 781610081., 1.},                            /* ci       */
       {53103334. / 780726093., 0., 244481296. / 685635505., 41493456. / 602487871., -45498718. / 926142189., 1625563237. / 4379140271., 191595797. / 1038702495.},     /* bi       */
       {41808761. / 935030896., 0., 224724272. / 506147085., 2995752066. / 3862177123., 170795979. / 811534085., -177906423. / 1116903503., -655510901. / 2077404990.}, /* bi_lo    */
@@ -671,6 +826,35 @@ struct PreImplementedTableau {
          {82243160. / 364375691., -515873404. / 1213273815., 820109726. / 1294837243., 36245507. / 242779260.},
          {3579594. / 351273191., 34292133. / 461028419., 267156948. / 2671391749., 22665163. / 1338599875., -3836509. / 1614789462.},
          {53103334. / 780726093., 0., 352190060. / 1283966121., 37088117. / 2206150964., 7183323. / 1828127386., 187705681. / 1370684829.},
+      }}
+   );
+
+   /// Classical velocity-Verlet algorithm
+   static inline const ButcherNystromTableau<2> VEL_VERLET =
+   ButcherNystromTableau<2>(2,
+      {0., 1.},    /* ci       */
+      {0.5, 0.5},  /* bi       */
+      {0.5, 0.},   /* bbari    */
+      {{
+         { }, 
+         {0.5}
+      }}
+   );
+
+   /// Okunbor Skeel, 6-oder 7-stages Method 1 (Table 2) https://doi.org/10.1016/0377-0427(92)00119-T
+   static inline const ButcherNystromTableau<7> OS76 =
+   ButcherNystromTableau<7>(6,
+      {0.9441339218821262, 0.3462623051625522, 0.9347913701231966, 0.5, 0.06520862987680341024, 0.65373769483744778901, 0.05586607811787376572},    /* ci       */
+      {-0.68774007118557290171, 0.13118241020105280626, 0.92161977504885189358, 0.26987577187133640373, 0.92161977504885189358, 0.13118241020105280626, -0.68774007118557290171},  /* bi       */
+      {-0.03842134054164531, 0.08575888644805676, 0.06009756279830341, 0.1349378859356682, 0.8615222122505484919, 0.04542352375299604894, -0.6493187306439276215},   /* bbari    */
+      {{
+         { }, 
+         {0.4111802682425534},
+         {0.006425247211741155, 0.0772046612149093},
+         {0.30544869505114114, 0.02016768134753036, -0.4007123247261225},
+         {0.6044721428905411, -0.036869298519848596, -0.801424649452245, -0.11733965661499358},
+         {0.1997171218597289, 0.04033536269506072, -0.2590246249935048, 0.0414900790599762, 0.5424000244587402155},
+         {0.6108973901022823, -0.038094876977013074, -0.810034929902692, -0.11986098498218263, -0.0086102804504469946, -0.07843023967207378087}
       }}
    );
 
